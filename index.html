@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>バーコード検証</title>
+
+<script src="https://unpkg.com/@zxing/library@latest"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+
+<style>
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  background: #f2f2f7;
+}
+
+.header {
+  background: #007aff;
+  color: white;
+  text-align: center;
+  padding: 14px;
+  font-weight: bold;
+  font-size: 18px;
+}
+
+.container { padding: 10px; }
+
+.card {
+  background: white;
+  border-radius: 16px;
+  padding: 14px;
+  margin-bottom: 12px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+
+.title {
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 6px;
+}
+
+.mode-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.mode-buttons button {
+  flex: 1;
+  padding: 12px;
+  border-radius: 10px;
+  border: none;
+  font-weight: bold;
+  background: #e5e5ea;
+}
+
+.mode-active {
+  background: #007aff !important;
+  color: white;
+}
+
+input {
+  width: 100%;
+  padding: 12px;
+  font-size: 18px;
+  border-radius: 10px;
+  border: 1px solid #ddd;
+  margin-bottom: 8px;
+}
+
+button.action {
+  width: 100%;
+  padding: 14px;
+  border-radius: 12px;
+  border: none;
+  font-size: 16px;
+  font-weight: bold;
+  margin-top: 6px;
+}
+
+.primary { background: #007aff; color: white; }
+.secondary { background: #34c759; color: white; }
+
+/* カメラ枠 */
+.camera-wrap {
+  position: relative;
+}
+
+video {
+  width: 100%;
+  border-radius: 12px;
+  margin-top: 10px;
+  background: black;
+}
+
+/* OCRガイド枠 */
+#guide {
+  position: absolute;
+  top: 40%;
+  left: 10%;
+  width: 80%;
+  height: 20%;
+  border: 3px solid #00ff88;
+  border-radius: 10px;
+  box-shadow: 0 0 0 9999px rgba(0,0,0,0.5);
+}
+
+/* 結果 */
+.result-box {
+  margin-top: 10px;
+  padding: 10px;
+  border-radius: 10px;
+  background: #f9f9f9;
+}
+
+.label {
+  font-size: 12px;
+  color: #888;
+}
+
+.value {
+  font-size: 22px;
+  font-weight: bold;
+  word-break: break-all;
+}
+
+.green { color: #28a745; }
+.red { color: #ff3b30; }
+</style>
+</head>
+
+<body>
+
+<div class="header">バーコード検証</div>
+
+<div class="container">
+
+  <!-- モード -->
+  <div class="card">
+    <div class="title">コード種別</div>
+    <div class="mode-buttons">
+      <button id="janBtn" class="mode-active" onclick="setMode('JAN')">JAN</button>
+      <button id="itfBtn" onclick="setMode('ITF')">ITF</button>
+    </div>
+  </div>
+
+  <!-- 原稿 -->
+  <div class="card">
+    <div class="title">原稿（基準）</div>
+    <input id="manualInput" placeholder="手入力 or OCR">
+    <button class="action primary" onclick="saveManual()">入力を保存</button>
+    <button class="action secondary" onclick="startCamera('master')">📷 OCR読み取り</button>
+
+    <div class="result-box">
+      <div class="label">原稿結果</div>
+      <div id="masterResult" class="value"></div>
+    </div>
+  </div>
+
+  <!-- スキャン -->
+  <div class="card">
+    <div class="title">バーコード検証</div>
+    <button class="action primary" onclick="startScan()">📷 スキャン開始</button>
+
+    <div class="camera-wrap">
+      <video id="video" autoplay playsinline></video>
+      <div id="guide"></div>
+    </div>
+
+    <canvas id="canvas" style="display:none;"></canvas>
+
+    <div class="result-box">
+      <div class="label">バーコード</div>
+      <div id="barResult" class="value"></div>
+    </div>
+
+    <div class="result-box">
+      <div class="label">OCR（数字）</div>
+      <div id="ocrResult" class="value"></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+let mode = "JAN";
+let masterCode = "";
+const video = document.getElementById("video");
+
+// モード切替
+function setMode(m) {
+  mode = m;
+  janBtn.classList.remove("mode-active");
+  itfBtn.classList.remove("mode-active");
+  if (m === "JAN") janBtn.classList.add("mode-active");
+  else itfBtn.classList.add("mode-active");
+}
+
+// 手入力
+function saveManual() {
+  masterCode = manualInput.value;
+  masterResult.innerText = masterCode;
+}
+
+// カメラ起動
+async function startCamera(type) {
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: "environment" }
+  });
+  video.srcObject = stream;
+
+  setTimeout(() => captureImage(type), 2000);
+}
+
+// トリミング撮影（ここが核心）
+function captureImage(type) {
+  const canvas = document.getElementById("canvas");
+  const ctx = canvas.getContext("2d");
+
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+
+  const cropX = vw * 0.1;
+  const cropY = vh * 0.4;
+  const cropW = vw * 0.8;
+  const cropH = vh * 0.2;
+
+  canvas.width = cropW;
+  canvas.height = cropH;
+
+  ctx.filter = "grayscale(1) contrast(2)";
+  ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+
+  const image = canvas.toDataURL("image/png");
+  runOCR(image, type);
+}
+
+// OCR（数字限定）
+async function runOCR(image, type) {
+  const result = await Tesseract.recognize(image, 'eng', {
+    tessedit_char_whitelist: '0123456789'
+  });
+
+  let text = result.data.text.replace(/[^0-9]/g, "");
+
+  if (mode === "JAN" && text.length > 13) {
+    text = text.slice(0,13);
+  }
+
+  if (type === "master") {
+    masterCode = text;
+    masterResult.innerText = text;
+  } else {
+    displayResult("ocrResult", text);
+  }
+}
+
+// バーコード
+async function startScan() {
+  const reader = new ZXing.BrowserBarcodeReader();
+
+  try {
+    const result = await reader.decodeOnceFromVideoDevice(undefined, video);
+    displayResult("barResult", result.text);
+    captureImage("ocr");
+  } catch {
+    alert("読み取り失敗");
+  }
+}
+
+// 判定
+function displayResult(id, value) {
+  const el = document.getElementById(id);
+  el.innerText = value;
+
+  if (!masterCode) return;
+
+  if (value === masterCode) {
+    el.className = "value green";
+  } else {
+    el.className = "value red";
+  }
+}
+</script>
+
+</body>
+</html>
