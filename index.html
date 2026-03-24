@@ -82,8 +82,8 @@ button.action {
 
 .primary { background: #007aff; color: white; }
 .secondary { background: #34c759; color: white; }
+.danger { background: #ff3b30; color: white; }
 
-/* カメラ枠 */
 .camera-wrap {
   position: relative;
 }
@@ -95,7 +95,7 @@ video {
   background: black;
 }
 
-/* OCRガイド枠 */
+/* OCRガイド（暗さ0.2） */
 #guide {
   position: absolute;
   top: 40%;
@@ -104,10 +104,9 @@ video {
   height: 20%;
   border: 3px solid #00ff88;
   border-radius: 10px;
-  box-shadow: 0 0 0 9999px rgba(0,0,0,0.5);
+  box-shadow: 0 0 0 9999px rgba(0,0,0,0.2);
 }
 
-/* 結果 */
 .result-box {
   margin-top: 10px;
   padding: 10px;
@@ -152,6 +151,7 @@ video {
     <input id="manualInput" placeholder="手入力 or OCR">
     <button class="action primary" onclick="saveManual()">入力を保存</button>
     <button class="action secondary" onclick="startCamera('master')">📷 OCR読み取り</button>
+    <button class="action danger" onclick="clearMaster()">クリア</button>
 
     <div class="result-box">
       <div class="label">原稿結果</div>
@@ -163,6 +163,7 @@ video {
   <div class="card">
     <div class="title">バーコード検証</div>
     <button class="action primary" onclick="startScan()">📷 スキャン開始</button>
+    <button class="action danger" onclick="clearResults()">結果クリア</button>
 
     <div class="camera-wrap">
       <video id="video" autoplay playsinline></video>
@@ -189,7 +190,6 @@ let mode = "JAN";
 let masterCode = "";
 const video = document.getElementById("video");
 
-// モード切替
 function setMode(m) {
   mode = m;
   janBtn.classList.remove("mode-active");
@@ -198,13 +198,11 @@ function setMode(m) {
   else itfBtn.classList.add("mode-active");
 }
 
-// 手入力
 function saveManual() {
   masterCode = manualInput.value;
   masterResult.innerText = masterCode;
 }
 
-// カメラ起動
 async function startCamera(type) {
   const stream = await navigator.mediaDevices.getUserMedia({
     video: { facingMode: "environment" }
@@ -214,7 +212,6 @@ async function startCamera(type) {
   setTimeout(() => captureImage(type), 2000);
 }
 
-// トリミング撮影（ここが核心）
 function captureImage(type) {
   const canvas = document.getElementById("canvas");
   const ctx = canvas.getContext("2d");
@@ -237,7 +234,6 @@ function captureImage(type) {
   runOCR(image, type);
 }
 
-// OCR（数字限定）
 async function runOCR(image, type) {
   const result = await Tesseract.recognize(image, 'eng', {
     tessedit_char_whitelist: '0123456789'
@@ -257,20 +253,24 @@ async function runOCR(image, type) {
   }
 }
 
-// バーコード
 async function startScan() {
-  const reader = new ZXing.BrowserBarcodeReader();
-
   try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "environment" }
+    });
+    video.srcObject = stream;
+
+    const reader = new ZXing.BrowserBarcodeReader();
     const result = await reader.decodeOnceFromVideoDevice(undefined, video);
+
     displayResult("barResult", result.text);
     captureImage("ocr");
+
   } catch {
     alert("読み取り失敗");
   }
 }
 
-// 判定
 function displayResult(id, value) {
   const el = document.getElementById(id);
   el.innerText = value;
@@ -282,6 +282,20 @@ function displayResult(id, value) {
   } else {
     el.className = "value red";
   }
+}
+
+/* クリア機能 */
+function clearMaster() {
+  masterCode = "";
+  masterResult.innerText = "";
+  manualInput.value = "";
+}
+
+function clearResults() {
+  barResult.innerText = "";
+  ocrResult.innerText = "";
+  barResult.className = "value";
+  ocrResult.className = "value";
 }
 </script>
 
