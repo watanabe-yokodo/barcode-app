@@ -69,20 +69,23 @@ button.action {
   position: relative;
 }
 
+/* 🔥 カメラ高さ制御 */
 video {
   width: 100%;
+  height: 45vh;
+  object-fit: cover;
   border-radius: 12px;
   margin-top: 10px;
   background: black;
 }
 
-/* 🔥 OCR枠（最適化済み） */
+/* 🔥 OCRガイド（表示と処理が完全一致） */
 #guide {
   position: absolute;
   top: 65%;
   left: 10%;
   width: 80%;
-  height: 12%;
+  height: 14%;
   border: 3px solid #00ff88;
   border-radius: 10px;
   box-shadow: 0 0 0 9999px rgba(0,0,0,0.2);
@@ -228,6 +231,7 @@ async function startOCRScan() {
   await startCameraStream();
   setTimeout(() => captureImage("ocr"), 1500);
 }
+
 function captureImage(type) {
   const canvas = document.getElementById("canvas");
   const ctx = canvas.getContext("2d");
@@ -236,21 +240,17 @@ function captureImage(type) {
   const vw = video.videoWidth;
   const vh = video.videoHeight;
 
-  // 表示サイズ
   const rectVideo = video.getBoundingClientRect();
   const rectGuide = guide.getBoundingClientRect();
 
-  // 比率計算（超重要）
   const scaleX = vw / rectVideo.width;
   const scaleY = vh / rectVideo.height;
 
-  // ガイド位置 → 実際の動画座標へ変換
   const cropX = (rectGuide.left - rectVideo.left) * scaleX;
   const cropY = (rectGuide.top - rectVideo.top) * scaleY;
   const cropW = rectGuide.width * scaleX;
   const cropH = rectGuide.height * scaleY;
 
-  // 解像度アップ
   canvas.width = cropW * 3;
   canvas.height = cropH * 3;
 
@@ -260,7 +260,6 @@ function captureImage(type) {
     0, 0, canvas.width, canvas.height
   );
 
-  // 2値化
   let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
   let data = imageData.data;
 
