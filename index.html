@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>バーコード検証</title>
 
 <script src="https://unpkg.com/@zxing/library@latest"></script>
@@ -13,168 +13,250 @@
 
 body {
   margin: 0;
-  font-family: sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
   background: #f2f2f7;
 }
 
-.container {
-  padding: 10px;
+.header {
+  background: #007aff;
+  color: white;
+  text-align: center;
+  padding: 14px;
+  font-weight: bold;
+  font-size: 18px;
 }
+
+.container { padding: 10px; }
 
 .card {
-  background: #fff;
-  border-radius: 12px;
-  padding: 12px;
-  margin-bottom: 10px;
+  background: white;
+  border-radius: 16px;
+  padding: 14px;
+  margin-bottom: 12px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
 }
 
-button {
+.title {
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 6px;
+}
+
+input {
   width: 100%;
   padding: 12px;
-  border: none;
+  font-size: 18px;
   border-radius: 10px;
-  margin-top: 6px;
-  font-size: 16px;
+  border: 1px solid #ddd;
+  margin-bottom: 8px;
 }
 
-.blue { background: #007aff; color: #fff; }
-.green { background: #34c759; color: #fff; }
-.red { background: #ff3b30; color: #fff; }
+button.action {
+  width: 100%;
+  padding: 14px;
+  border-radius: 12px;
+  border: none;
+  font-size: 16px;
+  font-weight: bold;
+  margin-top: 6px;
+}
 
-/* 🔥 カメラ枠固定（ここが今回の本体） */
+.primary { background: #007aff; color: white; }
+.secondary { background: #34c759; color: white; }
+.danger { background: #ff3b30; color: white; }
+
 .camera-wrap {
   position: relative;
   width: 100%;
-  height: 250px;  /* ← 固定 */
+  height: 250px;   /* ← 好きな高さ（固定） */
   overflow: hidden;
   border-radius: 12px;
   background: black;
 }
 
-/* 🔥 videoは中にフィット */
 video {
   width: 100%;
-  height: 100%;
-  object-fit: cover;
+  height: 100%;       /* ← 追加 */
+  object-fit: cover;  /* ← 追加（重要） */
 }
 
-/* OCRガイド */
 #guide {
   position: absolute;
-  left: 5%;
-  width: 90%;
-  top: 70%;
-  height: 80px;
+  top: 40%;
+  left: 10%;
+  width: 80%;
+  height: 20%;
   border: 3px solid #00ff88;
   border-radius: 10px;
   box-shadow: 0 0 0 9999px rgba(0,0,0,0.2);
 }
 
-.result {
+.result-box {
   margin-top: 10px;
-  font-size: 18px;
+  padding: 10px;
+  border-radius: 10px;
+  background: #f9f9f9;
 }
+
+.label {
+  font-size: 12px;
+  color: #888;
+}
+
+.value {
+  font-size: 22px;
+  font-weight: bold;
+  word-break: break-all;
+}
+
+.green { color: #28a745; }
+.red { color: #ff3b30; }
 </style>
 </head>
 
 <body>
 
+<div class="header">バーコード検証</div>
+
 <div class="container">
 
+  <!-- 原稿 -->
   <div class="card">
-    <button class="blue" onclick="startBarcode()">📷 コードスキャン</button>
-    <button class="green" onclick="startOCR()">🔢 OCR数字</button>
-    <button class="red" onclick="clearResult()">クリア</button>
+    <div class="title">原稿（基準）</div>
+    <input id="manualInput" placeholder="手入力 or OCR">
+    <button class="action primary" onclick="saveManual()">入力を保存</button>
+    <button class="action secondary" onclick="startCamera('master')">📷 OCR読み取り</button>
+    <button class="action danger" onclick="clearMaster()">クリア</button>
+
+    <div class="result-box">
+      <div class="label">原稿結果</div>
+      <div id="masterResult" class="value"></div>
+    </div>
+  </div>
+
+  <!-- スキャン -->
+  <div class="card">
+    <div class="title">バーコード検証</div>
+    <button class="action primary" onclick="startScan()">📷 スキャン開始</button>
+    <button class="action danger" onclick="clearResults()">結果クリア</button>
 
     <div class="camera-wrap">
       <video id="video" autoplay playsinline></video>
       <div id="guide"></div>
     </div>
 
-    <div class="result">バーコード: <span id="bar"></span></div>
-    <div class="result">OCR: <span id="ocr"></span></div>
+    <canvas id="canvas" style="display:none;"></canvas>
+
+    <div class="result-box">
+      <div class="label">バーコード</div>
+      <div id="barResult" class="value"></div>
+    </div>
+
+    <div class="result-box">
+      <div class="label">OCR（数字）</div>
+      <div id="ocrResult" class="value"></div>
+    </div>
   </div>
 
 </div>
 
-<canvas id="canvas" style="display:none;"></canvas>
-
 <script>
+let masterCode = "";
 const video = document.getElementById("video");
 
-/* カメラ起動 */
-async function startCamera() {
+function saveManual() {
+  masterCode = manualInput.value;
+  masterResult.innerText = masterCode;
+}
+
+async function startCamera(type) {
   const stream = await navigator.mediaDevices.getUserMedia({
     video: { facingMode: "environment" }
   });
   video.srcObject = stream;
+
+  setTimeout(() => captureImage(type), 2000);
 }
 
-/* バーコード */
-async function startBarcode() {
-  await startCamera();
-
-  const reader = new ZXing.BrowserBarcodeReader();
-  const result = await reader.decodeOnceFromVideoDevice(undefined, video);
-
-  document.getElementById("bar").innerText = result.text;
-}
-
-/* OCR */
-async function startOCR() {
-  await startCamera();
-  setTimeout(capture, 1500);
-}
-
-/* OCRキャプチャ（ガイド一致版） */
-function capture() {
+function captureImage(type) {
   const canvas = document.getElementById("canvas");
   const ctx = canvas.getContext("2d");
-  const guide = document.getElementById("guide");
 
   const vw = video.videoWidth;
   const vh = video.videoHeight;
 
-  const rectVideo = video.getBoundingClientRect();
-  const rectGuide = guide.getBoundingClientRect();
+  const cropX = vw * 0.1;
+  const cropY = vh * 0.4;
+  const cropW = vw * 0.8;
+  const cropH = vh * 0.2;
 
-  const scaleX = vw / rectVideo.width;
-  const scaleY = vh / rectVideo.height;
+  canvas.width = cropW;
+  canvas.height = cropH;
 
-  const cropX = (rectGuide.left - rectVideo.left) * scaleX;
-  const cropY = (rectGuide.top - rectVideo.top) * scaleY;
-  const cropW = rectGuide.width * scaleX;
-  const cropH = rectGuide.height * scaleY;
+  ctx.filter = "grayscale(1) contrast(2)";
+  ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
 
-  canvas.width = cropW * 2;
-  canvas.height = cropH * 2;
-
-  ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, canvas.width, canvas.height);
-
-  let img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  let d = img.data;
-
-  for (let i = 0; i < d.length; i += 4) {
-    let g = (d[i] + d[i+1] + d[i+2]) / 3;
-    g = g > 140 ? 255 : 0;
-    d[i] = d[i+1] = d[i+2] = g;
-  }
-
-  ctx.putImageData(img, 0, 0);
-
-  Tesseract.recognize(canvas.toDataURL(), 'eng', {
-    tessedit_char_whitelist: '0123456789',
-    tessedit_pageseg_mode: 7
-  }).then(res => {
-    document.getElementById("ocr").innerText =
-      res.data.text.replace(/[^0-9]/g, "");
-  });
+  const image = canvas.toDataURL("image/png");
+  runOCR(image, type);
 }
 
-/* クリア */
-function clearResult() {
-  document.getElementById("bar").innerText = "";
-  document.getElementById("ocr").innerText = "";
+async function runOCR(image, type) {
+  const result = await Tesseract.recognize(image, 'eng', {
+    tessedit_char_whitelist: '0123456789'
+  });
+
+  let text = result.data.text.replace(/[^0-9]/g, "");
+
+  if (type === "master") {
+    masterCode = text;
+    masterResult.innerText = text;
+  } else {
+    displayResult("ocrResult", text);
+  }
+}
+
+async function startScan() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "environment" }
+    });
+    video.srcObject = stream;
+
+    const reader = new ZXing.BrowserBarcodeReader();
+    const result = await reader.decodeOnceFromVideoDevice(undefined, video);
+
+    displayResult("barResult", result.text);
+    captureImage("ocr");
+
+  } catch {
+    alert("読み取り失敗");
+  }
+}
+
+function displayResult(id, value) {
+  const el = document.getElementById(id);
+  el.innerText = value;
+
+  if (!masterCode) return;
+
+  if (value === masterCode) {
+    el.className = "value green";
+  } else {
+    el.className = "value red";
+  }
+}
+
+function clearMaster() {
+  masterCode = "";
+  masterResult.innerText = "";
+  manualInput.value = "";
+}
+
+function clearResults() {
+  barResult.innerText = "";
+  ocrResult.innerText = "";
+  barResult.className = "value";
+  ocrResult.className = "value";
 }
 </script>
 
