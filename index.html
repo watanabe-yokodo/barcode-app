@@ -76,12 +76,13 @@ video {
   background: black;
 }
 
+/* 🔥 OCR枠（最適化済み） */
 #guide {
   position: absolute;
-  top: 40%;
+  top: 65%;
   left: 10%;
   width: 80%;
-  height: 20%;
+  height: 12%;
   border: 3px solid #00ff88;
   border-radius: 10px;
   box-shadow: 0 0 0 9999px rgba(0,0,0,0.2);
@@ -121,7 +122,7 @@ video {
     <div class="title">原稿（基準）</div>
     <input id="manualInput" placeholder="手入力 or OCR">
     <button class="action primary" onclick="saveManual()">入力を保存</button>
-    <button class="action secondary" onclick="startCamera('master')">📷 OCR読み取り</button>
+    <button class="action secondary" onclick="startMasterOCR()">📷 OCR読み取り</button>
     <button class="action danger" onclick="clearMaster()">クリア</button>
 
     <div class="result-box">
@@ -133,7 +134,12 @@ video {
   <!-- スキャン -->
   <div class="card">
     <div class="title">バーコード検証</div>
-    <button class="action primary" onclick="startScan()">📷 スキャン開始</button>
+
+    <div style="display:flex; gap:8px;">
+      <button class="action primary" style="flex:1;" onclick="startBarcodeScan()">📷 コードスキャン</button>
+      <button class="action secondary" style="flex:1;" onclick="startOCRScan()">🔢 OCR数字</button>
+    </div>
+
     <button class="action danger" onclick="clearResults()">結果クリア</button>
 
     <div class="camera-wrap">
@@ -160,73 +166,13 @@ video {
 let masterCode = "";
 const video = document.getElementById("video");
 
-function saveManual() {
-  masterCode = manualInput.value;
-  masterResult.innerText = masterCode;
-}
+/* ================= 共通 ================= */
 
-async function startCamera(type) {
+async function startCameraStream() {
   const stream = await navigator.mediaDevices.getUserMedia({
     video: { facingMode: "environment" }
   });
   video.srcObject = stream;
-
-  setTimeout(() => captureImage(type), 2000);
-}
-
-function captureImage(type) {
-  const canvas = document.getElementById("canvas");
-  const ctx = canvas.getContext("2d");
-
-  const vw = video.videoWidth;
-  const vh = video.videoHeight;
-
-  const cropX = vw * 0.1;
-  const cropY = vh * 0.4;
-  const cropW = vw * 0.8;
-  const cropH = vh * 0.2;
-
-  canvas.width = cropW;
-  canvas.height = cropH;
-
-  ctx.filter = "grayscale(1) contrast(2)";
-  ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
-
-  const image = canvas.toDataURL("image/png");
-  runOCR(image, type);
-}
-
-async function runOCR(image, type) {
-  const result = await Tesseract.recognize(image, 'eng', {
-    tessedit_char_whitelist: '0123456789'
-  });
-
-  let text = result.data.text.replace(/[^0-9]/g, "");
-
-  if (type === "master") {
-    masterCode = text;
-    masterResult.innerText = text;
-  } else {
-    displayResult("ocrResult", text);
-  }
-}
-
-async function startScan() {
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: "environment" }
-    });
-    video.srcObject = stream;
-
-    const reader = new ZXing.BrowserBarcodeReader();
-    const result = await reader.decodeOnceFromVideoDevice(undefined, video);
-
-    displayResult("barResult", result.text);
-    captureImage("ocr");
-
-  } catch {
-    alert("読み取り失敗");
-  }
 }
 
 function displayResult(id, value) {
@@ -242,11 +188,110 @@ function displayResult(id, value) {
   }
 }
 
+/* ================= 原稿 ================= */
+
+function saveManual() {
+  masterCode = manualInput.value;
+  masterResult.innerText = masterCode;
+}
+
 function clearMaster() {
   masterCode = "";
   masterResult.innerText = "";
   manualInput.value = "";
 }
+
+async function startMasterOCR() {
+  await startCameraStream();
+  setTimeout(() => captureImage("master"), 1500);
+}
+
+/* ================= バーコード ================= */
+
+async function startBarcodeScan() {
+  try {
+    await startCameraStream();
+
+    const reader = new ZXing.BrowserBarcodeReader();
+    const result = await reader.decodeOnceFromVideoDevice(undefined, video);
+
+    displayResult("barResult", result.text);
+
+  } catch {
+    alert("バーコード読み取り失敗");
+  }
+}
+
+/* ================= OCR（最強版） ================= */
+
+async function startOCRScan() {
+  await startCameraStream();
+  setTimeout(() => captureImage("ocr"), 1500);
+}
+
+function captureImage(type) {
+  const canvas = document.getElementById("canvas");
+  const ctx = canvas.getContext("2d");
+
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+
+  // 🔥 数字位置に最適化
+  const cropX = vw * 0.1;
+  const cropY = vh * 0.65;
+  const cropW = vw * 0.8;
+  const cropH = vh * 0.12;
+
+  // 解像度3倍
+  canvas.width = cropW * 3;
+  canvas.height = cropH * 3;
+
+  ctx.drawImage(
+    video,
+    cropX, cropY, cropW, cropH,
+    0, 0, canvas.width, canvas.height
+  );
+
+  // 🔥 白黒2値化処理
+  let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  let data = imageData.data;
+
+  for (let i = 0; i < data.length; i += 4) {
+    let gray = (data[i] + data[i+1] + data[i+2]) / 3;
+    gray = gray > 140 ? 255 : 0;
+    data[i] = data[i+1] = data[i+2] = gray;
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+
+  const image = canvas.toDataURL("image/png");
+  runOCRMulti(image, type);
+}
+
+async function runOCRMulti(image, type) {
+  let results = [];
+
+  for (let i = 0; i < 3; i++) {
+    const result = await Tesseract.recognize(image, 'eng', {
+      tessedit_char_whitelist: '0123456789',
+      tessedit_pageseg_mode: 7
+    });
+
+    const text = result.data.text.replace(/[^0-9]/g, "");
+    if (text) results.push(text);
+  }
+
+  let best = results.sort((a,b) => b.length - a.length)[0] || "";
+
+  if (type === "master") {
+    masterCode = best;
+    masterResult.innerText = best;
+  } else {
+    displayResult("ocrResult", best);
+  }
+}
+
+/* ================= クリア ================= */
 
 function clearResults() {
   barResult.innerText = "";
