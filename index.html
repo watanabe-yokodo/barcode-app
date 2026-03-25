@@ -228,6 +228,9 @@ async function startScan() {
     displayResult("barResult", result.text);
     captureImage("ocr");
 
+    // ★ここを修正（即実行→待機）
+    setTimeout(() => captureImage("ocr"), 2000);
+
   } catch {
     alert("読み取り失敗");
   }
