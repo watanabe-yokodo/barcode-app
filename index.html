@@ -175,7 +175,7 @@ async function startCamera(type) {
   });
   video.srcObject = stream;
 
-  setTimeout(() => captureImage(type), 2000);
+  setTimeout(() => captureImage(type), 1000);
 }
 
 function captureImage(type) {
