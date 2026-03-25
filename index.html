@@ -42,25 +42,6 @@ body {
   margin-bottom: 6px;
 }
 
-.mode-buttons {
-  display: flex;
-  gap: 8px;
-}
-
-.mode-buttons button {
-  flex: 1;
-  padding: 12px;
-  border-radius: 10px;
-  border: none;
-  font-weight: bold;
-  background: #e5e5ea;
-}
-
-.mode-active {
-  background: #007aff !important;
-  color: white;
-}
-
 input {
   width: 100%;
   padding: 12px;
@@ -95,7 +76,6 @@ video {
   background: black;
 }
 
-/* OCRガイド（暗さ0.2） */
 #guide {
   position: absolute;
   top: 40%;
@@ -135,15 +115,6 @@ video {
 <div class="header">バーコード検証</div>
 
 <div class="container">
-
-  <!-- モード -->
-  <div class="card">
-    <div class="title">コード種別</div>
-    <div class="mode-buttons">
-      <button id="janBtn" class="mode-active" onclick="setMode('JAN')">JAN</button>
-      <button id="itfBtn" onclick="setMode('ITF')">ITF</button>
-    </div>
-  </div>
 
   <!-- 原稿 -->
   <div class="card">
@@ -186,17 +157,8 @@ video {
 </div>
 
 <script>
-let mode = "JAN";
 let masterCode = "";
 const video = document.getElementById("video");
-
-function setMode(m) {
-  mode = m;
-  janBtn.classList.remove("mode-active");
-  itfBtn.classList.remove("mode-active");
-  if (m === "JAN") janBtn.classList.add("mode-active");
-  else itfBtn.classList.add("mode-active");
-}
 
 function saveManual() {
   masterCode = manualInput.value;
@@ -241,10 +203,6 @@ async function runOCR(image, type) {
 
   let text = result.data.text.replace(/[^0-9]/g, "");
 
-  if (mode === "JAN" && text.length > 13) {
-    text = text.slice(0,13);
-  }
-
   if (type === "master") {
     masterCode = text;
     masterResult.innerText = text;
@@ -284,7 +242,6 @@ function displayResult(id, value) {
   }
 }
 
-/* クリア機能 */
 function clearMaster() {
   masterCode = "";
   masterResult.innerText = "";
