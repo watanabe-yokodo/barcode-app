@@ -228,21 +228,29 @@ async function startOCRScan() {
   await startCameraStream();
   setTimeout(() => captureImage("ocr"), 1500);
 }
-
 function captureImage(type) {
   const canvas = document.getElementById("canvas");
   const ctx = canvas.getContext("2d");
+  const guide = document.getElementById("guide");
 
   const vw = video.videoWidth;
   const vh = video.videoHeight;
 
-  // 🔥 数字位置に最適化
-  const cropX = vw * 0.1;
-  const cropY = vh * 0.65;
-  const cropW = vw * 0.8;
-  const cropH = vh * 0.12;
+  // 表示サイズ
+  const rectVideo = video.getBoundingClientRect();
+  const rectGuide = guide.getBoundingClientRect();
 
-  // 解像度3倍
+  // 比率計算（超重要）
+  const scaleX = vw / rectVideo.width;
+  const scaleY = vh / rectVideo.height;
+
+  // ガイド位置 → 実際の動画座標へ変換
+  const cropX = (rectGuide.left - rectVideo.left) * scaleX;
+  const cropY = (rectGuide.top - rectVideo.top) * scaleY;
+  const cropW = rectGuide.width * scaleX;
+  const cropH = rectGuide.height * scaleY;
+
+  // 解像度アップ
   canvas.width = cropW * 3;
   canvas.height = cropH * 3;
 
@@ -252,7 +260,7 @@ function captureImage(type) {
     0, 0, canvas.width, canvas.height
   );
 
-  // 🔥 白黒2値化処理
+  // 2値化
   let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
   let data = imageData.data;
 
