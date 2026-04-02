@@ -3,31 +3,25 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>バーコード検証</title>
+<title>バーコード検証（iPhone対応版）</title>
 
 <script src="https://unpkg.com/@zxing/library@latest"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
 
 <style>
-* { box-sizing: border-box; }
-
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, sans-serif;
   background: #f2f2f7;
 }
-
 .header {
   background: #007aff;
   color: white;
   text-align: center;
   padding: 14px;
   font-weight: bold;
-  font-size: 18px;
 }
-
 .container { padding: 10px; }
-
 .card {
   background: white;
   border-radius: 16px;
@@ -135,17 +129,17 @@ video {
   </div>
 
   <!-- スキャン -->
-  <div class="card">
+<div class="card">
     <div class="title">バーコード検証</div>
-    <button class="action primary" onclick="startScan()">📷 スキャン開始</button>
-    <button class="action danger" onclick="clearResults()">結果クリア</button>
+<button class="primary" onclick="startScan()">スキャン開始</button>
+<button class="danger" onclick="stopCamera()">停止</button>
 
-    <div class="camera-wrap">
-      <video id="video" autoplay playsinline></video>
-      <div id="guide"></div>
-    </div>
+<div class="camera-wrap">
+<video id="video" autoplay playsinline muted></video>
+<div id="guide"></div>
+</div>
 
-    <canvas id="canvas" style="display:none;"></canvas>
+<canvas id="canvas" style="display:none;"></canvas>
 
     <div class="result-box">
       <div class="label">バーコード</div>
@@ -162,23 +156,75 @@ video {
 
 <script>
 let masterCode = "";
-const video = document.getElementById("video");
+let video = document.getElementById("video");
+let stream = null;
+let reader = null;
+let scanning = false;
 
 function saveManual() {
   masterCode = manualInput.value;
   masterResult.innerText = masterCode;
 }
 
-async function startCamera(type) {
-  const stream = await navigator.mediaDevices.getUserMedia({
-    video: { facingMode: "environment" }
-  });
+// iPhone安定版カメラ起動
+async function startCamera() {
+  stopCamera();
+
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: { exact: "environment" }
+      },
+      audio: false
+    });
+  } catch {
+    // fallback
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: true
+    });
+  }
+
   video.srcObject = stream;
 
-  setTimeout(() => captureImage(type), 1000);
+  await video.play();
 }
 
-function captureImage(type) {
+// カメラ停止（重要）
+function stopCamera() {
+  scanning = false;
+
+  if (reader) {
+    reader.reset();
+  }
+
+  if (stream) {
+    stream.getTracks().forEach(track => track.stop());
+  }
+}
+
+// スキャン（連続方式に変更）
+async function startScan() {
+  await startCamera();
+
+  reader = new ZXing.BrowserBarcodeReader();
+  scanning = true;
+
+  reader.decodeFromVideoDevice(null, video, async (result, err) => {
+    if (!scanning) return;
+
+    if (result) {
+      scanning = false;
+
+      displayResult("barResult", result.text);
+
+      // OCRは少し遅らせる（安定化）
+      setTimeout(() => captureOCR(), 500);
+    }
+  });
+}
+
+// OCR（軽量化）
+function captureOCR() {
   const canvas = document.getElementById("canvas");
   const ctx = canvas.getContext("2d");
 
@@ -193,47 +239,16 @@ function captureImage(type) {
   canvas.width = cropW;
   canvas.height = cropH;
 
-  ctx.filter = "grayscale(1) contrast(2)";
   ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
 
   const image = canvas.toDataURL("image/png");
-  runOCR(image, type);
-}
 
-async function runOCR(image, type) {
-  const result = await Tesseract.recognize(image, 'eng', {
+  Tesseract.recognize(image, 'eng', {
     tessedit_char_whitelist: '0123456789'
-  });
-
-  let text = result.data.text.replace(/[^0-9]/g, "");
-
-  if (type === "master") {
-    masterCode = text;
-    masterResult.innerText = text;
-  } else {
+  }).then(res => {
+    let text = res.data.text.replace(/[^0-9]/g, "");
     displayResult("ocrResult", text);
-  }
-}
-
-async function startScan() {
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: "environment" }
-    });
-    video.srcObject = stream;
-
-    const reader = new ZXing.BrowserBarcodeReader();
-    const result = await reader.decodeOnceFromVideoDevice(undefined, video);
-
-    displayResult("barResult", result.text);
-    captureImage("ocr");
-
-    // ★ここを修正（即実行→待機）
-    setTimeout(() => captureImage("ocr"), 1000);
-
-  } catch {
-    alert("読み取り失敗");
-  }
+  });
 }
 
 function displayResult(id, value) {
@@ -247,19 +262,6 @@ function displayResult(id, value) {
   } else {
     el.className = "value red";
   }
-}
-
-function clearMaster() {
-  masterCode = "";
-  masterResult.innerText = "";
-  manualInput.value = "";
-}
-
-function clearResults() {
-  barResult.innerText = "";
-  ocrResult.innerText = "";
-  barResult.className = "value";
-  ocrResult.className = "value";
 }
 </script>
 
